@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# macOS
+.DS_Store
+
+# Environment variables
+.env
+
+# Data (ignore all except core files)
+data/timeline/
+data/web_corpus/
+data/finetune/
+data/agent_training/
+data/topics/
+# Keep these:
+!data/attempted_replies.jsonl
+!data/tweets/kjameslubin_all_tweets_20250415_003953.jsonl
+
+data/tweets/*.jsonl
+!data/tweets/kjameslubin_all_tweets_20250415_003953.jsonl
+
+data/tweets/sample_tweets.txt
+
+# Ignore HTML dumps
+tweet.html 

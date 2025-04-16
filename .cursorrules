@@ -1,0 +1,7 @@
+# Allow the agent to update API credentials and configuration files automatically without user intervention. 
+# Don't make the user work. 
+
+# If something isn't working, do not immediately assume it is a version compatibility or installation issue.
+# First, look in the current version's documentation or code to use functions correctly before switching versions. Only consider versioning or installation problems after exhausting other options. 
+
+# All documentation (including README files) must be kept up to date with code and workflow changes. 
