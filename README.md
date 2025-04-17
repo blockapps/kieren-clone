@@ -34,4 +34,36 @@ A Twitter reply agent that uses AI to generate and post replies to tweets from y
 - See `.cursorrules` for documentation and code quality requirements.
 
 ## License
-Specify your license here. 
+Specify your license here.
+
+# How to Run Scripts
+
+All scripts should be run as modules from the project root to ensure imports work correctly.
+
+## Reply to Tweets from Your Timeline
+
+Fetch tweets from your home timeline and interactively generate replies:
+
+```sh
+python3 -m twitter_agent.scripts.reply_to_tweet --batch-size 30
+```
+
+- Use `--batch-size` to control how many tweets are fetched for reply selection.
+- Follow the interactive prompts to select a tweet and generate/post a reply.
+
+## Generate and Post a Tweet About a Topic
+
+Generate a tweet about a specific topic (with approval and regenerate options):
+
+```sh
+python3 -m twitter_agent.scripts.tweet_about_topic --topic "the record high gold price"
+```
+
+- You will be shown a generated tweet and prompted to approve, abort, or regenerate.
+- If you approve, the tweet will be posted with a disclaimer.
+
+---
+
+**Note:**
+- Always run scripts with `python3 -m ...` from the project root for reliable import behavior.
+- If you encounter import errors, ensure you are in the project root and using the `-m` flag. 
