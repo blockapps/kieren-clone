@@ -41,12 +41,21 @@ def fetch_home_timeline(n=10):
         for ref_tweet in timeline.includes['tweets']:
             referenced_tweets[ref_tweet.id] = ref_tweet.text
     for tweet in timeline.data:
-        # If this tweet is a retweet or quote, get the full text from referenced_tweets
+        # Detect tweet type
+        tweet_type = 'original'
         full_text = tweet.text
+        quoted_text = None
         if hasattr(tweet, 'referenced_tweets') and tweet.referenced_tweets:
             for ref in tweet.referenced_tweets:
-                if ref.id in referenced_tweets:
-                    full_text = referenced_tweets[ref.id]
+                if ref.type == 'retweeted':
+                    tweet_type = 'retweet'
+                    if ref.id in referenced_tweets:
+                        full_text = referenced_tweets[ref.id]
+                elif ref.type == 'quoted':
+                    tweet_type = 'quote'
+                    quoted_text = referenced_tweets.get(ref.id)
+                elif ref.type == 'replied_to':
+                    tweet_type = 'reply'
         author_info = users.get(tweet.author_id, {})
         metrics = tweet.public_metrics if hasattr(tweet, 'public_metrics') else {}
         engagement = (
@@ -55,15 +64,19 @@ def fetch_home_timeline(n=10):
             metrics.get('retweet_count', 0) +
             metrics.get('quote_count', 0)
         )
-        tweets.append({
+        tweet_dict = {
             'id': tweet.id,
             'text': full_text,
             'author_username': author_info.get('username', 'unknown'),
             'author_name': author_info.get('name', 'unknown'),
             'created_at': str(tweet.created_at),
             'engagement': engagement,
-            'metrics': metrics
-        })
+            'metrics': metrics,
+            'type': tweet_type
+        }
+        if quoted_text:
+            tweet_dict['quoted_text'] = quoted_text
+        tweets.append(tweet_dict)
     # Sort by engagement, descending
     tweets = sorted(tweets, key=lambda t: t['engagement'], reverse=True)
     # Only return top n
@@ -217,13 +230,35 @@ def is_near_duplicate(reply, past_tweets, threshold=0.7):
             return True, past
     return False, None
 
+def handle_manual_reply(tweet, ai_reply, feedback):
+    manual_reply = input("Enter your reply: ").strip()
+    if manual_reply:
+        final_reply = manual_reply  # Do NOT append disclaimer here
+        confirm = input(f"\nPost this manual reply? (y/n): {final_reply}\n").strip().lower()
+        if confirm == 'y':
+            new_tweet_id = post_reply(final_reply, tweet['id'])
+            if new_tweet_id:
+                print(f"Reply posted: https://twitter.com/{get_my_username()}/status/{new_tweet_id}")
+                log_attempt(tweet['text'], ai_reply, feedback, final_reply, 'accepted')
+            else:
+                print("Reply posted, but could not retrieve tweet ID.")
+                log_attempt(tweet['text'], ai_reply, feedback, final_reply, 'accepted')
+            return True
+        else:
+            print("Aborted by user.")
+            log_attempt(tweet['text'], ai_reply, feedback, final_reply, 'rejected')
+            return True
+    else:
+        print("No manual reply provided. Returning to feedback loop.")
+        return False
+
 def main():
     parser = argparse.ArgumentParser(description="Reply to a tweet from your home timeline or a specific tweet by ID.")
     parser.add_argument('--tweet-id', type=str, help='ID of the tweet to reply to (headless or direct mode)')
     parser.add_argument('--tweet-text', type=str, help='Text of the tweet to reply to (optional, for direct mode)')
     parser.add_argument('--reply', type=str, help='Reply text (headless mode)')
     parser.add_argument('--index', type=int, help='Index of tweet in timeline to reply to (headless mode)')
-    parser.add_argument('--count', type=int, default=3, help='Number of tweets to show per page from home timeline')
+    parser.add_argument('--count', type=int, default=5, help='Number of tweets to show per page from home timeline')
     parser.add_argument('--batch-size', type=int, default=30, help='Total number of tweets to fetch in one batch')
     args = parser.parse_args()
 
@@ -253,13 +288,23 @@ def main():
                     print("\nAI could not generate a reply. You can enter your own.")
                     log_attempt(tweet_text, ai_reply, feedback, '', 'no_ai_reply')
                     ai_reply = ''
-                user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply, or type 'new' for a radically different attempt): ").strip()
-                if user_feedback.lower() == 'new':
+                user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply, or type 'new' for a radically different attempt, or 'manual' to write your own reply): ").strip().lower()
+                if user_feedback in ['manual', 'm']:
+                    if handle_manual_reply(tweet_text, ai_reply, feedback):
+                        return
+                    else:
+                        continue
+                if user_feedback == 'new':
                     feedback = None
                     radical_attempts += 1
                     if radical_attempts > 3:
                         print("Tried 3 radically different replies. Please provide feedback or enter your own reply.")
-                        user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply): ").strip()
+                        user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply, or 'manual' to write your own reply): ").strip().lower()
+                        if user_feedback in ['manual', 'm']:
+                            if handle_manual_reply(tweet_text, ai_reply, feedback):
+                                return
+                            else:
+                                continue
                         if not user_feedback:
                             final_reply = ai_reply
                             if not final_reply:
@@ -325,9 +370,18 @@ def main():
             for i, t in enumerate(page):
                 idx = shown + i
                 tweet_type = t.get('type', '')
-                prefix = '[RT] ' if tweet_type == 'retweet' else ''
+                prefix = ''
+                if tweet_type == 'retweet':
+                    prefix = '[RT] '
+                elif tweet_type == 'quote':
+                    prefix = '[QT] '
+                elif tweet_type == 'reply':
+                    prefix = '[RE] '
                 tweet_link = f"https://twitter.com/{t['author_username']}/status/{t['id']}" if t.get('author_username') and t.get('id') else ''
-                print(f"[{idx}] @{t['author_username']} ({t['author_name']}) at {t['created_at']} | Engagement: {t['engagement']} (Likes: {t['metrics'].get('like_count', 0)}, Replies: {t['metrics'].get('reply_count', 0)}, RTs: {t['metrics'].get('retweet_count', 0)}, Quotes: {t['metrics'].get('quote_count', 0)})\n{prefix}{t['text']}\n{tweet_link}\n")
+                print(f"[{idx}] @{t['author_username']} ({t['author_name']}) at {t['created_at']} | Engagement: {t['engagement']} (Likes: {t['metrics'].get('like_count', 0)}, Replies: {t['metrics'].get('reply_count', 0)}, RTs: {t['metrics'].get('retweet_count', 0)}, Quotes: {t['metrics'].get('quote_count', 0)})\n{prefix}{t['text']}")
+                if t.get('quoted_text'):
+                    print(f"  [Quoted] {t['quoted_text']}")
+                print(f"{tweet_link}\n")
             shown += page_size
             if shown < total:
                 more = input(f"Show more tweets? (y/n): ").strip().lower()
@@ -355,40 +409,29 @@ def main():
                     print("[WARNING] AI reply is very similar to a past tweet:")
                     print(f"AI reply: {reply_text}")
                     print(f"Past tweet: {dup_text}")
-                    user_feedback = input("This reply is a near-duplicate. Enter feedback for a new attempt, or press Enter to accept anyway: ").strip()
-                    if not user_feedback:
-                        final_reply = reply_text
-                        confirm = input(f"\nPost this reply? (y/n): {final_reply}\n").strip().lower()
-                        if confirm == 'y':
-                            new_tweet_id = post_reply(final_reply, tweet['id'])
-                            if new_tweet_id:
-                                print(f"Reply posted: https://twitter.com/{get_my_username()}/status/{new_tweet_id}")
-                                log_attempt(tweet['text'], ai_reply, feedback, final_reply, 'accepted')
-                            else:
-                                print("Reply posted, but could not retrieve tweet ID.")
-                                log_attempt(tweet['text'], ai_reply, feedback, final_reply, 'accepted')
-                            return
-                        else:
-                            print("Aborted by user.")
-                            log_attempt(tweet['text'], ai_reply, feedback, final_reply, 'rejected')
-                            return
-                    else:
-                        log_attempt(tweet['text'], ai_reply, feedback, '', 'rejected')
-                        feedback = user_feedback
-                        continue
                 print(f"\nAI-generated reply:\n{reply_text}")
             else:
                 print("\nAI could not generate a reply. You can enter your own.")
                 log_attempt(tweet['text'], ai_reply, feedback, '', 'no_ai_reply')
                 reply_text = ''
-            user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply, or type 'new' for a radically different attempt): ").strip()
-            if user_feedback.lower() == 'new':
-                # Try a radically different approach (reset feedback, increment attempt count)
+            print(f"\nAI-generated reply:\n{reply_text}")
+            user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply, type 'new' for a radically different attempt, or 'manual' to write your own reply): ").strip().lower()
+            if user_feedback in ['manual', 'm']:
+                if handle_manual_reply(tweet, ai_reply, feedback):
+                    return
+                else:
+                    continue
+            if user_feedback == 'new':
                 feedback = None
                 radical_attempts += 1
                 if radical_attempts > 3:
                     print("Tried 3 radically different replies. Please provide feedback or enter your own reply.")
-                    user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply): ").strip()
+                    user_feedback = input("Feedback for the AI (or press Enter to accept and post this reply, or 'manual' to write your own reply): ").strip().lower()
+                    if user_feedback in ['manual', 'm']:
+                        if handle_manual_reply(tweet, ai_reply, feedback):
+                            return
+                        else:
+                            continue
                     if not user_feedback:
                         final_reply = reply_text
                         if not final_reply:
