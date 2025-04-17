@@ -2,7 +2,7 @@ import json
 import openai
 import sys
 import os
-from twitter_agent.src.personality import get_personality_and_style_guide
+from twitter_agent.src.personality import get_tweet_guidance
 try:
     from . import config
 except ImportError:
@@ -23,17 +23,10 @@ def generate_tweet_reply(tweet_text, feedback=None):
         dict: JSON response with 'respond' and possibly 'reply' fields
     """
     try:
-        reminder = (
-            "\n\nIMPORTANT: Your response MUST be a single line of valid JSON in the format {\"respond\": true/false, \"reply\": \"<text>\"}. "
-            "Do NOT retweet, quote tweet, or use 'RT @' or similar. Only mention users if directly replying to them. "
-            "Prefer standalone, original replies. Do not copy or repeat exact phrases from past tweets. "
-            "Do NOT reply to the wrong person. Do NOT use hashtags, emojis, or reply formatting unless directly replying. "
-            "If you would not reply, return {\"respond\": false}. Otherwise, return {\"respond\": true, \"reply\": \"<your reply>\"}. "
-            "Never output anything except the JSON object."
-        )
+        guidance = get_tweet_guidance()
         prompt = (
             config.RELEVANCE_PROMPT.format(tweet_text=tweet_text)
-            + reminder
+            + "\n\n" + guidance
         )
         if feedback:
             prompt += f"\n\nUser feedback for improvement: {feedback}"
@@ -76,14 +69,12 @@ def generate_topic_tweet(topic, long=False, feedback=None):
         str: The generated tweet text
     """
     try:
-        style_guide = get_personality_and_style_guide()
+        guidance = get_tweet_guidance()
         if long:
             prompt = (
                 f"Write a long, detailed tweet (up to 4000 characters) about {topic}. "
                 "Make a clear point, support it with arguments, and include links or citations to relevant sources if possible. "
                 "Do not mention or tag any users. Do not use @ or reply formatting. "
-                "Do not retweet, quote tweet, or use 'RT @' or similar. "
-                "Do not copy or repeat exact phrases from past tweets—generate a fresh, original statement that matches my style. "
                 "Make it a standalone statement. Match my style."
             )
             max_tokens = 2000
@@ -92,8 +83,6 @@ def generate_topic_tweet(topic, long=False, feedback=None):
             prompt = (
                 f"Write an original tweet about {topic}. "
                 "Do not mention or tag any users. Do not use @ or reply formatting. "
-                "Do not retweet, quote tweet, or use 'RT @' or similar. "
-                "Do not copy or repeat exact phrases from past tweets—generate a fresh, original statement that matches my style. "
                 "Make it a standalone statement. Match my style."
             )
             max_tokens = 100
@@ -103,7 +92,7 @@ def generate_topic_tweet(topic, long=False, feedback=None):
         response = openai.chat.completions.create(
             model="ft:gpt-4.1-mini-2025-04-14:blockapps::BN4Ftmd0",
             messages=[
-                {"role": "system", "content": style_guide},
+                {"role": "system", "content": guidance},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.8,

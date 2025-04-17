@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import json
 from datetime import datetime
 import difflib
-from twitter_agent.src.personality import get_personality_and_style_guide
+from twitter_agent.src.personality import get_tweet_guidance
 
 # Robust import handling for both direct and module execution
 try:
@@ -122,16 +122,8 @@ def load_accepted_replies(reply_file='data/attempted_replies.jsonl', n=3):
     return examples
 
 def build_system_prompt(tweet_examples, reply_examples):
-    style = (
-        "You are replying as Kieren (@kjameslubin).\n"
-        "\n"
-        "First, generate an interesting, original tweet in response to the context.\n"
-        "Then, rewrite it to match Kieren's style and interests as described below.\n"
-        "Do NOT copy or repeat exact phrases from past tweets. Synthesize new replies that reflect the user's interests, topics, and style.\n"
-        "\n"
-        + get_personality_and_style_guide()
-    )
-    prompt = style
+    guidance = get_tweet_guidance()
+    prompt = guidance
     if tweet_examples:
         prompt += "\nHere are some of your real tweets as examples:\n"
         for t in tweet_examples:
