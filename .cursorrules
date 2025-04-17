@@ -5,3 +5,5 @@
 # First, look in the current version's documentation or code to use functions correctly before switching versions. Only consider versioning or installation problems after exhausting other options. 
 
 # All documentation (including README files) must be kept up to date with code and workflow changes. 
+
+Always pick the thing that's easier for the user, including automatic loading of credentials/configuration. 
